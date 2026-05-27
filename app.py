@@ -19,12 +19,13 @@ class Orang(ABC):
         pass
 
 class Mahasiswa(Orang):
-    def __init__(self, nim, nama, email, jurusan, pemilik_akun):
+    # Diberi default pemilik_akun="" agar data lama yang tidak punya kolom ini tidak bikin crash
+    def __init__(self, nim, nama, email, jurusan, pemilik_akun=""):
         super().__init__(nama)
         self.__nim = nim          # Private
         self.__email = email      # Private
         self.jurusan = jurusan    # Public
-        self.pemilik_akun = pemilik_akun  # Mengunci data ke akun tertentu
+        self.pemilik_akun = pemilik_akun  
 
     def get_nim(self): return self.__nim
     def get_email(self): return self.__email
@@ -38,7 +39,6 @@ class Mahasiswa(Orang):
 # ==========================================
 
 class AuthManager:
-    """Mengelola pendaftaran dan login akun menggunakan file JSON"""
     def __init__(self):
         self.file_path = "users.json"
         self.load_users()
@@ -74,7 +74,6 @@ class AuthManager:
 
 
 class StudentManager:
-    """Mengelola CRUD Mahasiswa berdasarkan akun yang aktif"""
     def __init__(self):
         self.file_path = "students.json"
         self.all_students = []
@@ -83,13 +82,22 @@ class StudentManager:
     def load_data(self):
         try:
             with open(self.file_path, "r") as f:
-                # Membaca semua data dari file JSON
-                self.all_students = [Mahasiswa(**d) for d in json.load(f)]
+                # Menggunakan baris aman agar file lama/baru sama-sama bisa terbaca tanpa crash
+                raw_data = json.load(f)
+                self.all_students = []
+                for d in raw_data:
+                    # Ambil data lama, jika pemilik_akun kosong beri default teks kosong
+                    self.all_students.append(Mahasiswa(
+                        nim=d.get('nim', ''),
+                        nama=d.get('nama', ''),
+                        email=d.get('email', ''),
+                        jurusan=d.get('jurusan', ''),
+                        pemilik_akun=d.get('pemilik_akun', '')
+                    ))
         except (FileNotFoundError, json.JSONDecodeError):
             self.all_students = []
 
     def get_students_by_user(self, email_user):
-        """Hanya mengambil data mahasiswa milik user yang sedang login"""
         return [m for m in self.all_students if m.pemilik_akun == email_user]
 
     def save_data(self):
@@ -104,15 +112,12 @@ class StudentManager:
             json.dump(data, f, indent=4)
 
     def bubble_sort_nim(self, email_user):
-        # Mengurutkan hanya data milik user yang sedang aktif
         user_students = self.get_students_by_user(email_user)
         n = len(user_students)
         for i in range(n):
             for j in range(0, n-i-1):
                 if user_students[j].get_nim() > user_students[j+1].get_nim():
                     user_students[j], user_students[j+1] = user_students[j+1], user_students[j]
-        
-        # Update kembali ke list utama
         self.update_main_list(user_students, email_user)
 
     def selection_sort_nama(self, email_user):
@@ -124,21 +129,16 @@ class StudentManager:
                 if user_students[j].get_nama().lower() < user_students[min_idx].get_nama().lower():
                     min_idx = j
             user_students[i], user_students[min_idx] = user_students[min_idx], user_students[i]
-        
-        # Update kembali ke list utama
         self.update_main_list(user_students, email_user)
 
     def update_main_list(self, user_students, email_user):
-        """Menyinkronkan data yang diurutkan kembali ke list utama"""
         self.all_students = [m for m in self.all_students if m.pemilik_akun != email_user]
         self.all_students.extend(user_students)
         self.save_data()
 
     def binary_search_nim(self, target_nim, email_user):
         user_students = self.get_students_by_user(email_user)
-        # Urutkan dulu sebelum binary search
         user_students.sort(key=lambda x: x.get_nim())
-        
         low, high = 0, len(user_students) - 1
         while low <= high:
             mid = (low + high) // 2
@@ -194,7 +194,7 @@ if not st.session_state.logged_in:
                 if submit_login:
                     if auth.login_user(email_input, pwd_input):
                         st.session_state.logged_in = True
-                        st.session_state.current_user = email_input # Simpan email user aktif
+                        st.session_state.current_user = email_input
                         st.success("🎯 Login Berhasil!")
                         st.rerun()
                     else:
@@ -225,11 +225,10 @@ if not st.session_state.logged_in:
                 st.rerun()
 
 else:
-    # Mengambil data mahasiswa spesifik milik akun yang sedang aktif saja
     active_user = st.session_state.current_user
     user_students = manager.get_students_by_user(active_user)
     
-    st.sidebar.markdown(f"<div style='background-color:#E0E7FF; pading:10px; border-radius:5px; margin-bottom:10px;'>👤 <b>Login sebagai:</b><br>{active_user}</div>", unsafe_allow_html=True)
+    st.sidebar.markdown(f"<div style='background-color:#E0E7FF; padding:10px; border-radius:5px; margin-bottom:10px; color:#1E3A8A;'>👤 <b>Login sebagai:</b><br>{active_user}</div>", unsafe_allow_html=True)
     st.sidebar.markdown("<h2 style='color: #1E3A8A;'>🎓 PANEL NAVIGASI</h2>", unsafe_allow_html=True)
     menu = st.sidebar.radio("Pilih Menu Tindakan:", ["📊 Dashboard Utama", "➕ Tambah Mahasiswa", "🔍 Cari & Urutkan"])
 
@@ -298,8 +297,6 @@ else:
                             
                             if not v_nim or v_nim.lower() == 'nan' or not v_nama or v_nama.lower() == 'nan':
                                 continue
-                            
-                            # Cek duplikat NIM khusus di dalam akun ini saja
                             if any(m.get_nim() == v_nim and m.pemilik_akun == active_user for m in manager.all_students):
                                 continue 
                             
