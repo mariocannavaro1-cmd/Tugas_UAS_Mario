@@ -160,16 +160,14 @@ class AcademicManager:
         self.all_lecturers = [d for d in self.all_lecturers if d.pemilik_akun != email_user] + user_lecturers
         self.save_data()
 
-    # FITUR BARU: Double Sort (Mengurutkan berdasarkan Jurusan/Prodi, jika sama urutkan berdasarkan Nama)
+    # Double Sort (Urutkan prodi, jika sama urutkan nama)
     def double_sort_mhs_prodi_nama(self, email_user):
         user_students = self.get_students_by_user(email_user)
         n = len(user_students)
         for i in range(n):
             for j in range(0, n-i-1):
-                # Kriteria 1: Berdasarkan Nama Jurusan
                 if user_students[j].jurusan > user_students[j+1].jurusan:
                     user_students[j], user_students[j+1] = user_students[j+1], user_students[j]
-                # Kriteria 2: Jika Jurusan sama, urutkan berdasarkan Nama Mahasiswa
                 elif user_students[j].jurusan == user_students[j+1].jurusan:
                     if user_students[j].get_nama().lower() > user_students[j+1].get_nama().lower():
                         user_students[j], user_students[j+1] = user_students[j+1], user_students[j]
@@ -177,7 +175,7 @@ class AcademicManager:
         self.save_data()
 
     # ------------------------------------------
-    # FITUR BARU: ALGORITMA LINEAR SEARCH ENGINE
+    # ALGORITMA LINEAR SEARCH ENGINE
     # ------------------------------------------
     def linear_search_mhs(self, email_user, keyword, kriteria):
         user_students = self.get_students_by_user(email_user)
@@ -320,7 +318,7 @@ else:
     st.sidebar.markdown("<h3 style='font-size: 11px; color: #64748B; font-weight: 700; letter-spacing: 1px; margin-bottom: 15px;'>MENU UTAMA</h3>", unsafe_allow_html=True)
     menu = st.sidebar.radio("Pilih Tindakan:", ["📊 Dashboard Ringkasan", "➕ Tambah Mahasiswa", "➕ Tambah Dosen", "🔍 Cari & Urutkan"])
 
-    # Reset State Pencarian/Pengurutan jika berpindah menu utama
+    # Reset State Pencarian jika ganti menu
     if 'current_menu' not in st.session_state: st.session_state.current_menu = menu
     if st.session_state.current_menu != menu:
         st.session_state.current_menu = menu
@@ -379,10 +377,48 @@ else:
             else: st.info("Belum ada data dosen terdaftar.")
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # MENU 2: TAMBAH MAHASISWA
+    # MENU 2: TAMBAH MAHASISWA (FITUR MASSAL DAN MANUAL DIKEMBALIKAN UTUH)
     elif menu == "➕ Tambah Mahasiswa":
         st.markdown("# ➕ Input Data Mahasiswa")
         st.write("---")
+        
+        # FITUR UTAMA 1: IMPORT MASSAL FILE
+        st.markdown("<div class='dashboard-card'><h4>📥 Import Data Secara Massal (CSV, JSON, XLSX)</h4>", unsafe_allow_html=True)
+        uploaded_file = st.file_uploader("Pilih file data mahasiswa", type=["csv", "json", "xlsx"])
+        
+        if uploaded_file is not None:
+            if st.button("Proses & Tambah Data File"):
+                try:
+                    count_added = 0
+                    df_uploaded = None
+                    if uploaded_file.name.endswith('.csv'):
+                        df_uploaded = pd.read_csv(uploaded_file, sep=None, engine='python')
+                    elif uploaded_file.name.endswith('.xlsx'):
+                        df_uploaded = pd.read_excel(uploaded_file)
+                    elif uploaded_file.name.endswith('.json'):
+                        file_data = json.load(uploaded_file)
+                        if isinstance(file_data, list): df_uploaded = pd.DataFrame(file_data)
+                    
+                    if df_uploaded is not None:
+                        df_uploaded.dropna(how='all', inplace=True)
+                        df_uploaded.columns = [str(col).lower().strip() for col in df_uploaded.columns]
+                        for _, row in df_uploaded.iterrows():
+                            v_nim = str(row['nim']).split('.')[0].strip()
+                            v_nama = str(row['nama']).strip()
+                            v_email = str(row['email']).strip()
+                            v_jurusan = str(row['jurusan']).strip()
+                            if not v_nim or v_nim.lower() == 'nan' or not v_nama: continue
+                            if any(m.get_nim() == v_nim and m.pemilik_akun == active_user for m in manager.all_students): continue 
+                            manager.all_students.append(Mahasiswa(v_nim, v_nama, v_email, v_jurusan, active_user))
+                            count_added += 1
+                        if count_added > 0:
+                            manager.save_data()
+                            st.success(f"🎉 Berhasil mengimpor {count_added} data mahasiswa baru!")
+                            st.rerun()
+                except Exception as e: st.error(f"❌ Gagal: {e}")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # FITUR UTAMA 2: FORM MANUAL
         st.markdown("<div class='dashboard-card'><h4>📝 Tambah Data Secara Manual</h4>", unsafe_allow_html=True)
         with st.form("tambah_mhs_form"):
             nim = st.text_input("NIM (Harus Angka)")
@@ -425,7 +461,7 @@ else:
                 else: st.error("❌ Mohon isi data dengan benar!")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # MENU 4: CARI & URUTKAN (DIPERBARUI TOTAL)
+    # MENU 4: CARI & URUTKAN
     elif menu == "🔍 Cari & Urutkan":
         st.markdown("# 🔍 Pusat Pemrosesan Algoritma")
         st.write("---")
@@ -461,7 +497,6 @@ else:
                 
                 st.session_state.sort_time = time.time() - start_time
 
-            # Menampilkan waktu eksekusi dan HASIL DATA tabel agar langsung kelihatan
             if 'sort_df' in st.session_state:
                 st.write(f"⏱️ *Execution Time:* {st.session_state.sort_time:.6f} detik")
                 st.markdown("<p style='color:#10B981; font-weight:600;'>📊 Hasil Urutan Data Terbaru:</p>", unsafe_allow_html=True)
@@ -513,7 +548,6 @@ else:
                         else: st.session_state.search_df = "KOSONG"
                     else: st.warning("Silakan masukkan kata kunci pencarian!")
 
-            # Menampilkan hasil pencarian yang dikunci lewat session_state agar aman
             if 'search_df' in st.session_state:
                 if isinstance(st.session_state.search_df, pd.DataFrame):
                     st.markdown("<p style='color:#3B82F6; font-weight:600;'>🎯 Data Ditemukan:</p>", unsafe_allow_html=True)
